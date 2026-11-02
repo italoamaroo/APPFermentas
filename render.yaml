@@ -1,0 +1,28 @@
+# Render Blueprint — New + > Blueprint > selecione este repositório
+services:
+  - type: web
+    name: almoxarifado
+    runtime: static
+    buildCommand: node build.js
+    staticPublishPath: ./public
+    envVars:
+      - key: SUPABASE_URL
+        sync: false        # o Render vai pedir o valor na criação
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: ALERTA_HORAS
+        value: "48"        # alerta quando a ferramenta passa de 2 dias com o mesmo funcionário
+    headers:
+      - path: /*
+        name: Permissions-Policy
+        value: camera=(self)
+      - path: /js/config.js
+        name: Cache-Control
+        value: no-cache
+      - path: /sw.js
+        name: Cache-Control
+        value: no-cache
+    routes:
+      - type: rewrite
+        source: /app
+        destination: /app.html
