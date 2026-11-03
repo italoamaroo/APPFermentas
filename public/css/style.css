@@ -321,3 +321,8 @@ table.tbl{ width:100%; border-collapse:collapse; font-size:12.5px; }
 .success h2{ margin:0 0 6px; }
 .late-box{ margin-top:12px; padding:10px 12px; border-radius:11px; background:var(--danger-bg); color:var(--danger); font-weight:700; font-size:13px; }
 label.field input, label.field select, label.field textarea{ width:100%; min-width:0; }
+
+/* Interface por perfil (autorização real fica no servidor) */
+body:not(.pode-operar) .op-only{ display:none !important; }
+body:not(.e-gestor) .gestor-only{ display:none !important; }
+body:not(.ve-assinatura) .sig-only{ display:none !important; }

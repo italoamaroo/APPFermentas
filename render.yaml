@@ -12,6 +12,8 @@ services:
         sync: false
       - key: ALERTA_HORAS
         value: "48"        # alerta quando a ferramenta passa de 2 dias com o mesmo funcionário
+      - key: ENVIAR_CORRELACAO
+        value: "1"         # "0" desliga o cabeçalho x-correlacao (só se aparecer erro de CORS)
     headers:
       - path: /*
         name: Permissions-Policy

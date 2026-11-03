@@ -1,0 +1,80 @@
+# Testes SQL — Fase A — 2026-11-03T13:54:33.299Z
+PASSOU  T00  Antes da migração: inserção forjada no histórico era possível (reprodução de L1)
+PASSOU  T01  Migração 002 aplica sobre o schema existente
+PASSOU  T02  Migração 002 é reexecutável (idempotente)
+PASSOU  T03  Concessão de perfil gera evento de criticidade 'critica'
+PASSOU  T04  Inserção direta/forjada em movimentações é bloqueada  — permission denied for table movimentacoes
+PASSOU  T05  Alterar status/posse da ferramenta fora das funções oficiais é bloqueado  — Status e posse da ferramenta só podem mudar por retirada, devolução ou manutenção
+PASSOU  T06  Cadastro não consegue nascer 'em uso' (status forçado para disponível)
+PASSOU  T07  Retirada sem assinatura é recusada no servidor e registrada como falha
+PASSOU  T08  Retirada válida: autor e e-mail vêm do token, data do servidor
+PASSOU  T09  Evento da retirada contém hash da movimentação (vínculo de integridade)
+PASSOU  T10  Identificador de correlação válido é registrado
+PASSOU  T11  Correlação com caractere de controle é descartada
+PASSOU  T12  Usuário sem perfil: retirada negada no servidor e tentativa auditada
+PASSOU  T13  Usuário sem perfil não lê ferramentas nem funcionários (RLS)
+PASSOU  T14  Usuário não consegue se autoconceder perfil (escalada de privilégio)  — permission denied for table perfis
+PASSOU  T15  Almoxarife não exclui funcionário (somente gestor)
+PASSOU  T16  Gestor exclui; evento 'delete' alta com matrícula e sem nome
+PASSOU  T17  Alteração de dado pessoal registra só o nome do campo, nunca o valor
+PASSOU  T18  Alteração de campo não pessoal registra de/para
+PASSOU  T19  Atualização sem mudança real não gera evento (evita ruído de importações)
+PASSOU  T20  Contexto: chaves sensíveis/ inválidas removidas e quebras de linha neutralizadas
+PASSOU  T21  Ação fora da lista é recusada e registrada
+PASSOU  T22  Evento de aplicação exige o perfil correspondente (auditor não importa funcionários)
+PASSOU  T23  Limite de taxa: após 60 eventos/min recusa e registra 'limite_excedido' uma única vez
+PASSOU  T24  Nem o auditor lê audit.eventos diretamente (só pelas funções)  — permission denied for schema audit
+PASSOU  T25  Usuário não insere direto em audit.eventos  — permission denied for schema audit
+PASSOU  T26  Administrador do banco não altera/apaga/trunca eventos sem desligar gatilhos (limitação: com gatilho desligado só a verificação/âncora detectam)  — audit.eventos é somente-inclusão: UPDATE | audit.eventos é somente-inclusão: DELETE | audit.eventos é somente-inclusão: TRUNCA
+PASSOU  T27  Histórico de movimentações não pode ser alterado nem apagado (nem pelo admin)
+PASSOU  T28  Excluir ferramenta preserva o histórico (somente o vínculo vira nulo)
+PASSOU  T29  Almoxarife não consulta auditoria; tentativa registrada
+PASSOU  T30  Auditor consulta; limite máximo de 200 por página aplicado
+PASSOU  T31  Paginação por cursor sem sobreposição
+PASSOU  T32  Consulta da auditoria é ela própria auditada
+PASSOU  T33  Período acima de 366 dias é recusado
+PASSOU  T34  Exportação exige finalidade
+PASSOU  T35  Exportação autorizada registra linhas e finalidade
+PASSOU  T36  Gestor não exporta auditoria (segregação de funções); tentativa crítica registrada
+PASSOU  T37  Almoxarife não vê assinaturas; tentativa registrada
+PASSOU  T38  Gestor vê assinatura e a visualização é registrada
+PASSOU  T39  Política do storage: almoxarife não lista/abre arquivos de assinatura
+PASSOU  T40  Nenhum token/JWT/senha nos eventos
+PASSOU  T41  Data/hora com fuso explícito (timestamptz, UTC no hash)  — 2026-11-03 13:54:35.368+00
+PASSOU  T42  Cadeia íntegra verificada  — 95 eventos
+PASSOU  T43  Adulteração direta (superusuário) é detectada no evento exato
+PASSOU  T44  Falha de integridade gera evento crítico
+PASSOU  T45  Exclusão de evento intermediário é detectada (encadeamento quebrado)
+PASSOU  T46  Fluxo devolução → manutenção → disponível continua funcionando
+PASSOU  T47  Retirada dupla da mesma ferramenta continua impedida
+PASSOU  T48  Alerta de +2 dias continua funcionando (com RLS por perfil)
+PASSOU  R01  Achado 1: assinatura já usada não comprova outra retirada
+PASSOU  R02  Achado 1: assinatura enviada por outro usuário é recusada
+PASSOU  R03  Achado 1: assinatura enviada há mais de 15 min é recusada
+PASSOU  R04  Achado 1: almoxarife não lê o caminho das assinaturas (só 'tem_assinatura')  — permission denied for table movimentacoes
+PASSOU  R05  Achado 11: upload fora do padrão de nome é recusado pela política  — new row violates row-level security policy for table "objects"
+PASSOU  R06  Achado 10: evento da retirada registra tamanho e eTag do arquivo da assinatura
+PASSOU  R07  Achado 2: 350 tentativas inválidas/negadas geram no máximo ~61 eventos por minuto  — 61 eventos gravados
+PASSOU  R08  Achado 2: excesso sinalizado uma vez como 'limite_excedido'
+PASSOU  R09  Achado 3: contexto acima de 2 KB é recusado e o evento gravado é pequeno
+PASSOU  R10  Achado 3: contexto enorme é reduzido no ponto de gravação, mantendo o identificador  — 69 bytes
+PASSOU  R11  Achado 7: reexecutar a migração não concede perfis de novo (separação de funções mantida)  — ["auditor"]
+PASSOU  R12  Achado 9: texto livre (observações) registra só que mudou, não o conteúdo
+PASSOU  R13  Achado 13: mesmo com app.via_rpc ligado na sessão, usuário comum não muda status  — Status e posse da ferramenta só podem mudar por retirada, devolução ou manutenção
+PASSOU  R14  Edição legítima de cadastro pelo almoxarife continua funcionando
+PASSOU  R15  Achado 14: resultado nulo não gera erro interno
+PASSOU  R16  Achado 15: excluir funcionário com ferramenta dá mensagem clara  — Este funcionário está com ferramenta(s). Registre a devolução antes de excluir.
+PASSOU  R17  Achado 17: caracteres bidirecionais/invisíveis são removidos
+PASSOU  R18  Achado 4: verificação em lotes percorre a cadeia inteira  — 5 lotes, 100 eventos
+PASSOU  R19  Achado 8: âncora anotada fora do sistema é confirmada
+PASSOU  R20  Achado 8: corte do final passa na verificação simples, mas é detectado pela âncora externa
+PASSOU  R21  Achado 12: troca ambígua de campos (separador) é detectada
+PASSOU  R23  N1: após estourar o limite com repetições, a 1ª tentativa crítica distinta continua registrada
+PASSOU  R24  N2: texto gigante em cadastro é recusado pelo limite de tamanho da coluna  — new row for relation "ferramentas" violates check constraint
+PASSOU  R25  N2: alteração de código continua rastreada (de/para + identificador) mesmo com nome longo
+PASSOU  R26  N3: mesma imagem (eTag+tamanho) reenviada com outro nome é recusada
+PASSOU  T49  Reversão aplica, preserva os eventos e restaura as funções antigas
+PASSOU  R22  Achado 16: a reversão pode ser reexecutada
+PASSOU  T50  Migração pode ser reaplicada após a reversão
+
+RESULTADO: TODOS OS TESTES PASSARAM

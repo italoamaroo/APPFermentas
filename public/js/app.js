@@ -65,7 +65,8 @@
     }
 
     if (st.step === "tool") {
-      var act = t.status === "disponivel" ? '<button class="btn btn-primary big-btn" id="goOut">↗ Retirar ferramenta</button>' :
+      var act = !A.tem(["almoxarife", "gestor"]) ? '<div class="late-box" style="background:var(--surface-2);color:var(--muted)">Seu perfil é somente consulta — retiradas e devoluções são feitas por almoxarife ou gestor.</div>' :
+        t.status === "disponivel" ? '<button class="btn btn-primary big-btn" id="goOut">↗ Retirar ferramenta</button>' :
         t.status === "em_uso" ? '<button class="btn btn-good big-btn" id="goBack">↩ Registrar devolução</button>' :
         '<button class="btn btn-outline big-btn" id="goMaint">✓ Concluir manutenção</button>';
       el.innerHTML = steps(2) + toolSummary(t) + '<div style="margin-top:14px;display:grid;gap:8px;">' + act +
@@ -167,7 +168,7 @@
         var f = A.holder(t), lt = A.isLate(t), wa = lt && A.waLink(f, t);
         return '<div class="tool-row" data-open="' + t.id + '"' + (lt ? ' style="border-color:var(--danger)"' : "") + '><div class="info">' +
           '<div class="name">' + esc(t.nome) + '</div><div class="meta">' + esc(A.fmtWorker(f)) + ' · ' + A.fmtElapsed(t.retirada_em) + ' · <span class="mono">' + esc(t.codigo) + '</span></div>' +
-          (lt ? '<div class="tag-row"><span class="badge badge-late">' + A.daysLabel(t.retirada_em) + '</span>' + (wa ? '<a class="tag" href="' + esc(wa) + '" target="_blank" rel="noopener">WhatsApp</a>' : "") + '</div>' : "") +
+          (lt ? '<div class="tag-row"><span class="badge badge-late">' + A.daysLabel(t.retirada_em) + '</span>' + (wa ? '<a class="tag op-only" data-wa="' + t.id + '" href="' + esc(wa) + '" target="_blank" rel="noopener">WhatsApp</a>' : "") + '</div>' : "") +
           '</div><span class="muted">›</span></div>';
       }).join("") + '</div>');
   }
@@ -183,12 +184,14 @@
     var late = A.lateTools().length;
     $("alertCount").hidden = !late; $("alertCount").textContent = late;
     $("demoBanner").hidden = !A.DEMO;
-    $("userTag").textContent = A.DEMO ? "modo demonstração" : (S.user && S.user.email) || "";
+    document.body.classList.toggle("pode-operar", A.tem(["almoxarife", "gestor"]));
+    $("userTag").textContent = (A.DEMO ? "modo demonstração" : (S.user && S.user.email) || "") + (S.papeis.length ? " · " + S.papeis.join(", ") : "");
   }
 
   $("tabbar").addEventListener("click", function (e) { var b = e.target.closest(".tab-btn"); if (b) setTab(b.dataset.tab); });
   $("view-uso").addEventListener("click", function (e) { if (e.target.closest("a")) return; var r = e.target.closest("[data-open]"); if (r) openTool(r.dataset.open); });
   $("logoutBtn").addEventListener("click", function () { A.askConfirm("Sair do app?", A.logout, "Sair"); });
+  document.addEventListener("click", function (e) { var a = e.target.closest("a[data-wa]"); if (a) A.auditarSilencioso("compartilhamento_whatsapp", a.dataset.wa); });
   document.addEventListener("visibilitychange", function () { if (document.hidden && scanner) scanner.stop(); else if (!document.hidden && st.tab === "scan" && st.step === "scan" && camWanted) startCam(); });
 
   // Atualiza só o que não interrompe o usuário (não redesenha a assinatura em andamento)

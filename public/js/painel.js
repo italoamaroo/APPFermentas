@@ -5,7 +5,7 @@
   "use strict";
   var A = window.Almox, S = A.S, esc = A.esc;
 
-  var TABS = ["painel", "escanear", "ferramentas", "funcionarios", "etiquetas", "historico", "fornecedores"];
+  var TABS = ["painel", "escanear", "ferramentas", "funcionarios", "etiquetas", "historico", "fornecedores", "auditoria"];
   var currentTab = "painel";
   var currentSite = "all";
   try { currentSite = localStorage.getItem("almox_site") || "all"; } catch (e) { }
@@ -20,6 +20,37 @@
     S.ferramentas.forEach(function (t) { var m = /^FRT-(\d+)$/i.exec(t.codigo || ""); if (m) max = Math.max(max, parseInt(m[1], 10)); });
     return "FRT-" + String(max + 1).padStart(3, "0");
   }
+  // Planilhas: read-excel-file / write-excel-file (substituem o SheetJS 0.18.5 — CVE-2023-30533)
+  async function lerXlsx(file) {
+    if (typeof window.readXlsxFile !== "function") throw new Error("Leitor de planilhas não carregou");
+    var res = await window.readXlsxFile(file);
+    if (Array.isArray(res) && res.length && res[0] && !Array.isArray(res[0]) && Array.isArray(res[0].data)) res = res[0].data;
+    return (res || []).map(function (row) { return (row || []).map(function (v) { return v == null ? "" : v instanceof Date ? v.toISOString().slice(0, 10) : String(v); }); });
+  }
+  function lerCsv(texto) {
+    texto = String(texto || "").replace(/^\uFEFF/, "");
+    var primeira = texto.split(/\r?\n/)[0] || "";
+    var sep = (primeira.split(";").length > primeira.split(",").length) ? ";" : ",";
+    var rows = [], row = [], cell = "", q = false;
+    for (var i = 0; i < texto.length; i++) {
+      var c = texto[i];
+      if (q) { if (c === '"') { if (texto[i + 1] === '"') { cell += '"'; i++; } else q = false; } else cell += c; }
+      else if (c === '"') q = true;
+      else if (c === sep) { row.push(cell); cell = ""; }
+      else if (c === "\n" || c === "\r") { if (c === "\r" && texto[i + 1] === "\n") i++; row.push(cell); rows.push(row); row = []; cell = ""; }
+      else cell += c;
+    }
+    if (cell !== "" || row.length) { row.push(cell); rows.push(row); }
+    return rows;
+  }
+  async function salvarXlsx(linhas, nomeArquivo) {
+    if (typeof window.writeXlsxFile !== "function") throw new Error("Gerador de planilhas não carregou");
+    // células sempre como texto/número: nunca fórmula (evita injeção de fórmulas no Excel)
+    var data = linhas.map(function (r) { return r.map(function (v) { return { value: v == null ? "" : (typeof v === "number" ? v : String(v)), type: typeof v === "number" ? Number : String }; }); });
+    var w = window.writeXlsxFile(data, { fileName: nomeArquivo });
+    if (w && typeof w.toFile === "function") await w.toFile(nomeArquivo); else await w;
+  }
+
   async function run(promise, okMsg) {
     try { await promise; if (okMsg) A.toast(okMsg); return true; }
     catch (e) { A.toast(A.errMsg(e), 4500); return false; }
@@ -31,7 +62,7 @@
       el.innerHTML = '<div id="pnStats"></div><div id="pnAlert"></div>' +
         '<div class="quick-row" style="margin-top:16px;">' +
           '<button class="btn btn-primary" data-go="escanear">🔎 Escanear ferramenta</button>' +
-          '<button class="btn btn-ghost" id="pnNew">+ Cadastrar ferramenta</button>' +
+          '<button class="btn btn-ghost op-only" id="pnNew">+ Cadastrar ferramenta</button>' +
           '<button class="btn btn-ghost" data-go="etiquetas">🏷️ Imprimir etiquetas</button>' +
         '</div>' +
         '<div class="section-title">Em uso agora</div><div id="pnUso"></div>' +
@@ -69,8 +100,8 @@
             return '<div class="alert-row"><span class="days-pill">' + A.daysLabel(t.retirada_em) + '</span>' +
               '<div class="info"><div class="name">' + esc(t.nome) + ' <span class="mono muted" style="font-weight:500">' + esc(t.codigo) + '</span></div>' +
               '<div class="meta">com <strong>' + esc(A.fmtWorker(f)) + '</strong> · desde ' + A.fmtDateTime(t.retirada_em) + (t.site ? " · " + esc(t.site) : "") + '</div></div>' +
-              (wa ? '<a class="btn btn-outline btn-sm" target="_blank" rel="noopener" href="' + esc(wa) + '">WhatsApp</a>' : "") +
-              '<button class="btn btn-good btn-sm" data-ret="' + t.id + '">Devolver</button></div>';
+              (wa ? '<a class="btn btn-outline btn-sm op-only" target="_blank" rel="noopener" data-wa="' + t.id + '" href="' + esc(wa) + '">WhatsApp</a>' : "") +
+              '<button class="btn btn-good btn-sm op-only" data-ret="' + t.id + '">Devolver</button></div>';
           }).join("") + '</div>';
       }
       $("pnAlert").innerHTML = ah;
@@ -82,7 +113,7 @@
           return '<div class="tool-row"' + (late ? ' style="border-color:var(--danger)"' : "") + '><div class="info"><div class="name">' + esc(t.nome) +
             (late ? ' <span class="badge badge-late">' + A.daysLabel(t.retirada_em) + '</span>' : "") + '</div>' +
             '<div class="meta">com <strong>' + esc(A.fmtWorker(A.holder(t))) + '</strong> · ' + A.fmtElapsed(t.retirada_em) + ' · <span class="mono">' + esc(t.codigo) + '</span></div></div>' +
-            '<button class="btn btn-good btn-sm" data-ret="' + t.id + '">Devolver</button></div>';
+            '<button class="btn btn-good btn-sm op-only" data-ret="' + t.id + '">Devolver</button></div>';
         }).join("") + '</div>';
 
       var hist = siteMovs().slice(0, 6);
@@ -109,7 +140,7 @@
               : '<div style="font-size:13px;font-weight:600;">' + esc(who) + ' · ' + (A.ACTION_LABEL[h.acao] || h.acao) + '</div>' +
                 '<div style="font-size:12px;color:var(--muted);">' + esc(h.ferramenta_nome) + ' · ' + A.fmtDateTime(h.created_at) + '</div>') +
       '</div>' +
-      (h.assinatura_path ? '<button class="btn btn-outline btn-sm" data-sig="' + h.id + '" title="Ver assinatura">✍️</button>' : "") +
+      (h.tem_assinatura ? '<button class="btn btn-outline btn-sm sig-only" data-sig="' + h.id + '" title="Ver assinatura (acesso registrado)">✍️</button>' : "") +
       (full ? '<div class="mono" style="font-size:11.5px;color:var(--muted);white-space:nowrap;">' + A.fmtDateTime(h.created_at) + '</div>' : "") +
     '</div>';
   }
@@ -193,9 +224,9 @@
         (t.observacoes ? '<dt>Nota</dt><dd>' + esc(t.observacoes) + '</dd>' : "") +
       '</dl>' +
       (A.isLate(t) ? '<div class="late-box">⚠ Há ' + A.daysLabel(t.retirada_em) + ' com o mesmo funcionário</div>' : "");
-    if (t.status === "disponivel") h += '<button class="btn btn-primary btn-block" style="margin-top:14px;" data-act="out">Retirar ferramenta</button>';
-    else if (t.status === "em_uso") h += '<button class="btn btn-good btn-block" style="margin-top:14px;" data-act="back">Registrar devolução</button>';
-    else h += '<button class="btn btn-outline btn-block" style="margin-top:14px;" data-act="maint">Concluir manutenção</button>';
+    if (t.status === "disponivel") h += '<button class="btn btn-primary btn-block op-only" style="margin-top:14px;" data-act="out">Retirar ferramenta</button>';
+    else if (t.status === "em_uso") h += '<button class="btn btn-good btn-block op-only" style="margin-top:14px;" data-act="back">Registrar devolução</button>';
+    else h += '<button class="btn btn-outline btn-block op-only" style="margin-top:14px;" data-act="maint">Concluir manutenção</button>';
     return h + '<button class="btn btn-ghost btn-block" style="margin-top:8px;" data-act="clear">Escanear outra ferramenta</button></div>';
   }
 
@@ -207,7 +238,7 @@
         '<input class="search-input" id="ferSearch" placeholder="Buscar por nome, código ou patrimônio">' +
         '<select class="select-input" id="ferStatus"><option value="todos">Todos os status</option><option value="disponivel">Disponível</option>' +
         '<option value="em_uso">Em uso</option><option value="atrasada">Em uso +' + (A.ALERTA_HORAS / 24) + ' dias</option><option value="manutencao">Manutenção</option></select>' +
-        '<button class="btn btn-primary" id="ferNew">+ Nova</button></div><div id="ferList"></div>';
+        '<button class="btn btn-primary op-only" id="ferNew">+ Nova</button></div><div id="ferList"></div>';
       $("ferSearch").addEventListener("input", function (e) { ferF.q = e.target.value; Ferramentas.update(); });
       $("ferStatus").addEventListener("change", function (e) { ferF.status = e.target.value; Ferramentas.update(); });
       $("ferNew").addEventListener("click", function () { toolForm(null); });
@@ -245,13 +276,13 @@
               '<span class="tag">' + esc(t.tipo || "—") + '</span><span class="tag">' + (t.classificacao === "alugado" ? "Alugado" : "Próprio") + '</span>' +
               (t.site ? '<span class="tag">' + esc(t.site) + '</span>' : "") + '</div></div>' +
             '<div class="tool-actions">' +
-              (t.status === "disponivel" ? '<button class="btn btn-primary btn-sm" data-a="out" data-id="' + t.id + '">Retirar</button>' : "") +
-              (t.status === "em_uso" ? '<button class="btn btn-good btn-sm" data-a="back" data-id="' + t.id + '">Devolver</button>' : "") +
+              (t.status === "disponivel" ? '<button class="btn btn-primary btn-sm op-only" data-a="out" data-id="' + t.id + '">Retirar</button>' : "") +
+              (t.status === "em_uso" ? '<button class="btn btn-good btn-sm op-only" data-a="back" data-id="' + t.id + '">Devolver</button>' : "") +
               '<button class="btn btn-outline btn-sm" data-a="qr" data-id="' + t.id + '">QR</button>' +
-              '<button class="btn btn-outline btn-sm" data-a="label" data-id="' + t.id + '">Etiqueta</button>' +
-              '<button class="btn btn-outline btn-sm" data-a="edit" data-id="' + t.id + '">Editar</button>' +
-              '<button class="btn btn-outline btn-sm" data-a="maint" data-id="' + t.id + '">' + (t.status === "manutencao" ? "Concluir" : "Manutenção") + '</button>' +
-              '<button class="btn btn-danger btn-sm" data-a="del" data-id="' + t.id + '">Excluir</button>' +
+              '<button class="btn btn-outline btn-sm op-only" data-a="label" data-id="' + t.id + '">Etiqueta</button>' +
+              '<button class="btn btn-outline btn-sm op-only" data-a="edit" data-id="' + t.id + '">Editar</button>' +
+              '<button class="btn btn-outline btn-sm op-only" data-a="maint" data-id="' + t.id + '">' + (t.status === "manutencao" ? "Concluir" : "Manutenção") + '</button>' +
+              '<button class="btn btn-danger btn-sm gestor-only" data-a="del" data-id="' + t.id + '">Excluir</button>' +
             '</div></div>';
         }).join("") + '</div>';
     }
@@ -305,8 +336,8 @@
       el.innerHTML = '<div class="toolbar">' +
         '<input class="search-input" id="funSearch" placeholder="Buscar por nome, matrícula, função ou setor">' +
         '<select class="select-input" id="funStatus"><option value="ativos">Ativos</option><option value="posse">Com ferramenta</option><option value="atraso">Com atraso (+' + (A.ALERTA_HORAS / 24) + ' dias)</option><option value="inativos">Inativos</option><option value="todos">Todos</option></select>' +
-        '<button class="btn btn-ghost" id="funImport">⬆ Importar planilha</button>' +
-        '<button class="btn btn-primary" id="funNew">+ Novo</button></div>' +
+        '<button class="btn btn-ghost op-only" id="funImport">⬆ Importar planilha</button>' +
+        '<button class="btn btn-primary op-only" id="funNew">+ Novo</button></div>' +
         '<div id="funImportBox"></div><div id="funList"></div>';
       $("funSearch").addEventListener("input", function (e) { funF.q = e.target.value; Funcionarios.update(); });
       $("funStatus").addEventListener("change", function (e) { funF.status = e.target.value; Funcionarios.update(); });
@@ -352,8 +383,8 @@
             '<div class="tool-actions">' +
               '<button class="btn btn-outline btn-sm" data-a="view" data-id="' + f.id + '">Ver</button>' +
               '<button class="btn btn-outline btn-sm" data-a="badge" data-id="' + f.id + '">Crachá QR</button>' +
-              '<button class="btn btn-outline btn-sm" data-a="edit" data-id="' + f.id + '">Editar</button>' +
-              '<button class="btn btn-danger btn-sm" data-a="del" data-id="' + f.id + '">Excluir</button></div></div>';
+              '<button class="btn btn-outline btn-sm op-only" data-a="edit" data-id="' + f.id + '">Editar</button>' +
+              '<button class="btn btn-danger btn-sm gestor-only" data-a="del" data-id="' + f.id + '">Excluir</button></div></div>';
         }).join("") + '</div>';
     }
   };
@@ -422,8 +453,8 @@
       box.innerHTML = '<div class="card" style="margin-bottom:16px;">' +
         '<div class="row" style="margin-bottom:10px;"><strong style="font-size:14px;">Importar planilha de funcionários</strong><span class="spacer"></span>' +
           '<button class="btn btn-outline btn-sm" id="impTpl">⬇ Baixar modelo</button><button class="btn btn-ghost btn-sm" id="impClose">Fechar</button></div>' +
-        '<label class="dropzone" id="impDrop"><input type="file" id="impFile" accept=".xlsx,.xls,.csv,.ods" hidden>' +
-          '<strong>Clique ou arraste a planilha aqui</strong><span class="small muted">Excel (.xlsx, .xls), CSV ou ODS. Colunas reconhecidas: Matrícula, Nome, Função/Cargo, Setor/Obra, Telefone.</span></label>' +
+        '<label class="dropzone" id="impDrop"><input type="file" id="impFile" accept=".xlsx,.csv" hidden>' +
+          '<strong>Clique ou arraste a planilha aqui</strong><span class="small muted">Excel (.xlsx) ou CSV. Arquivos .xls/.ods antigos: salve como .xlsx antes. Colunas reconhecidas: Matrícula, Nome, Função/Cargo, Setor/Obra, Telefone.</span></label>' +
         '<p class="small muted" style="margin:10px 0 0;">Funcionários são identificados pela <strong>matrícula</strong>: se já existir, os dados são atualizados; se não existir, é cadastrado.</p></div>';
       $("impClose").addEventListener("click", function () { importState = null; drawImport(); });
       $("impTpl").addEventListener("click", downloadTemplate);
@@ -463,27 +494,32 @@
         var withPosse = {}; S.ferramentas.forEach(function (t) { if (t.funcionario_id) withPosse[t.funcionario_id] = 1; });
         var ids = st.deactivate ? st.missing.filter(function (f) { return !withPosse[f.id]; }).map(function (f) { return f.id; }) : [];
         await A.API.upsertFuncionarios(st.toSave, ids, function (d, t) { b.textContent = "Importando… " + d + "/" + t; });
-        A.toast("Importação concluída: " + st.toSave.length + " salvos" + (ids.length ? ", " + ids.length + " desativados" : ""), 4000);
+        // Resumo da importação (sem nomes nem nome do arquivo). Cada alteração individual já foi auditada pelo banco.
+        var resumoOk = await A.auditarSilencioso("importacao_funcionarios", null, {
+          formato: st.formato || "", linhas_validas: st.novos + st.alterados + st.iguais, novos: st.novos, atualizados: st.alterados,
+          sem_alteracao: st.iguais, ignorados: st.erros, desativados: ids.length });
+        A.toast("Importação concluída: " + st.toSave.length + " salvos" + (ids.length ? ", " + ids.length + " desativados" : "") +
+          (resumoOk ? "" : " (atenção: resumo não registrado na auditoria; as alterações individuais foram registradas)"), 5000);
         importState = null; drawImport();
       } catch (e) { $("impErr").textContent = A.errMsg(e); b.disabled = false; b.textContent = "Tentar de novo"; }
     });
   }
 
-  function readFile(file) {
-    if (!window.XLSX) return A.toast("Leitor de planilhas ainda carregando, tente de novo");
-    var r = new FileReader();
-    r.onload = function () {
-      try {
-        var wb = XLSX.read(new Uint8Array(r.result), { type: "array" });
-        var ws = wb.Sheets[wb.SheetNames[0]];
-        var rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: "" });
-        parseRows(rows, file.name);
-      } catch (e) { A.toast("Não consegui ler a planilha: " + e.message, 5000); }
-    };
-    r.readAsArrayBuffer(file);
+  var IMPORT_MAX_BYTES = 5 * 1024 * 1024, IMPORT_MAX_LINHAS = 20000;
+  async function readFile(file) {
+    try {
+      if (file.size > IMPORT_MAX_BYTES) throw new Error("arquivo maior que 5 MB");
+      var ext = (file.name.split(".").pop() || "").toLowerCase();
+      var rows;
+      if (ext === "csv") rows = lerCsv(await file.text());
+      else if (ext === "xlsx") rows = await lerXlsx(file);
+      else throw new Error("formato ." + ext + " não suportado (use .xlsx ou .csv)");
+      if (rows.length > IMPORT_MAX_LINHAS) throw new Error("mais de " + IMPORT_MAX_LINHAS + " linhas");
+      parseRows(rows, file.name, ext);
+    } catch (e) { A.toast("Não consegui ler a planilha: " + e.message, 5000); }
   }
 
-  function parseRows(rows, fileName) {
+  function parseRows(rows, fileName, formato) {
     var hIdx = -1, map = null;
     for (var i = 0; i < Math.min(rows.length, 15); i++) {
       var m = {}; rows[i].forEach(function (h, c) { var k = headerKey(h); if (k && m[k] == null) m[k] = c; });
@@ -512,16 +548,13 @@
       preview.push(o);
     }
     var missing = S.funcionarios.filter(function (f) { return f.ativo !== false && !seen[A.norm(f.matricula)]; });
-    importState = { step: "preview", fileName: fileName, cols: cols, preview: preview, toSave: toSave, novos: novos, alterados: alterados, iguais: iguais, erros: erros, missing: missing, deactivate: false };
+    importState = { step: "preview", fileName: fileName, formato: formato, cols: cols, preview: preview, toSave: toSave, novos: novos, alterados: alterados, iguais: iguais, erros: erros, missing: missing, deactivate: false };
     drawImport();
   }
 
   function downloadTemplate() {
-    if (!window.XLSX) return;
-    var ws = XLSX.utils.aoa_to_sheet([["Matrícula", "Nome", "Função", "Setor", "Telefone"], ["1001", "Fulano de Tal", "Pedreiro", "Obra Centro", "81999999999"], ["1002", "Beltrano da Silva", "Eletricista", "Obra Centro", ""]]);
-    ws["!cols"] = [{ wch: 12 }, { wch: 32 }, { wch: 18 }, { wch: 20 }, { wch: 16 }];
-    var wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Funcionarios");
-    XLSX.writeFile(wb, "modelo_funcionarios.xlsx");
+    salvarXlsx([["Matrícula", "Nome", "Função", "Setor", "Telefone"], ["1001", "Fulano de Tal", "Pedreiro", "Obra Centro", "81999999999"],
+      ["1002", "Beltrano da Silva", "Eletricista", "Obra Centro", ""]], "modelo_funcionarios.xlsx").catch(function (e) { A.toast(A.errMsg(e)); });
   }
 
   /* ================================================================ ETIQUETAS 70x25 */
@@ -564,7 +597,7 @@
               '<option value="a4">Folha A4 de etiquetas 70×25 (3 colunas × 11 linhas)</option></select></label>' +
           '</div>' +
           '<div class="row" style="margin:10px 0 4px;" id="etqOpts"><label class="chk"><input type="checkbox" id="etqPat"> Patrimônio</label><label class="chk"><input type="checkbox" id="etqSite"> Almoxarifado</label></div>' +
-          '<div class="row" style="margin:12px 0;"><span id="etqCount" class="small muted"></span><span class="spacer"></span><button class="btn btn-primary" id="etqPrint">🖨️ Imprimir</button></div>' +
+          '<div class="row" style="margin:12px 0;"><span id="etqCount" class="small muted"></span><span class="spacer"></span><button class="btn btn-primary op-only" id="etqPrint">🖨️ Imprimir</button></div>' +
           '<div class="label-preview" id="etqPreview"></div>' +
           '<p class="small muted" style="margin:10px 0 0;">Dica: na janela de impressão use escala <strong>100%</strong> (ou “Tamanho real”), margens <strong>Nenhuma</strong> e desative cabeçalhos/rodapés. Na térmica, configure o papel do driver para 70 × 25 mm.</p>' +
         '</div></div>';
@@ -618,6 +651,7 @@
   }
   function printLabels() {
     var items = etqItems(); if (!items.length) return;
+    A.auditarSilencioso("impressao_etiquetas", null, { tipo: Etq.mode, layout: Etq.layout, quantidade: items.length });
     var area = $("printArea");
     area.className = Etq.layout === "a4" ? "sheet" : "";
     area.innerHTML = items.map(labelHtml).join("");
@@ -642,15 +676,20 @@
       $("hisSearch").addEventListener("input", function (e) { hisF.q = e.target.value; Historico.update(); });
       $("hisAcao").addEventListener("change", function (e) { hisF.acao = e.target.value; Historico.update(); });
       $("hisDias").addEventListener("change", function (e) { hisF.dias = e.target.value; Historico.update(); });
-      $("hisExport").addEventListener("click", function () {
-        if (!window.XLSX) return;
-        var rows = hisFiltered().map(function (h) {
-          return { "Data/hora": A.fmtDateTime(h.created_at), "Ação": A.ACTION_LABEL[h.acao] || h.acao, "Código": h.ferramenta_codigo, "Ferramenta": h.ferramenta_nome,
-            "Funcionário": h.funcionario_nome || "", "Matrícula": h.matricula || "", "Almoxarifado": h.site || "", "Observação": h.observacao || "",
-            "Assinado": h.assinatura_path ? "Sim" : "Não", "Registrado por": h.usuario_email || "" };
-        });
-        var wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Historico");
-        XLSX.writeFile(wb, "historico_almoxarifado_" + new Date().toISOString().slice(0, 10) + ".xlsx");
+      $("hisExport").addEventListener("click", async function () {
+        var lista = hisFiltered();
+        if (!lista.length) return A.toast("Nada para exportar");
+        try {
+          await A.auditarObrigatorio("exportacao_historico", null, { linhas: lista.length, periodo_dias: Number(hisF.dias), filtro_acao: hisF.acao,
+            busca_aplicada: !!hisF.q, almoxarifado: currentSite === "all" ? "todos" : "filtrado" });
+          var linhas = [["Data/hora", "Ação", "Código", "Ferramenta", "Funcionário", "Matrícula", "Almoxarifado", "Observação", "Assinado", "Registrado por"]]
+            .concat(lista.map(function (h) {
+              return [A.fmtDateTime(h.created_at), A.ACTION_LABEL[h.acao] || h.acao, h.ferramenta_codigo || "", h.ferramenta_nome || "",
+                h.funcionario_nome || "", h.matricula || "", h.site || "", h.observacao || "", h.tem_assinatura ? "Sim" : "Não", h.usuario_email || ""];
+            }));
+          await salvarXlsx(linhas, "historico_almoxarifado_" + new Date().toISOString().slice(0, 10) + ".xlsx");
+          A.toast("Exportado. O arquivo contém dados pessoais: guarde em local restrito.", 4500);
+        } catch (e) { A.toast(A.errMsg(e), 5000); }
       });
       on($("hisList"), "click", "[data-sig]", function (b) { var m = S.movimentacoes.find(function (x) { return x.id === b.dataset.sig; }); if (m) A.showSignature(m); });
     },
@@ -674,7 +713,7 @@
   /* ================================================================ FORNECEDORES */
   var Fornecedores = {
     build: function (el) {
-      el.innerHTML = '<div class="toolbar"><div style="flex:1;"></div><button class="btn btn-primary" id="fornNew">+ Novo fornecedor</button></div><div id="fornList"></div>';
+      el.innerHTML = '<div class="toolbar"><div style="flex:1;"></div><button class="btn btn-primary op-only" id="fornNew">+ Novo fornecedor</button></div><div id="fornList"></div>';
       $("fornNew").addEventListener("click", function () {
         var m = A.openModal(A.modalHead("Novo fornecedor") + '<form id="fornForm"><div class="form-grid">' +
           '<label class="field full">Nome<input required id="sf_nome" placeholder="Ex.: Vonder Ferramentas"></label>' +
@@ -693,13 +732,137 @@
         '<div class="list">' + S.fornecedores.map(function (s) {
           var n = S.ferramentas.filter(function (t) { return t.fornecedor === s.nome; }).length;
           return '<div class="tool-row"><div class="info"><div class="name">' + esc(s.nome) + '</div><div class="meta">' + esc(s.contato || "Sem contato informado") + ' · ' + n + ' ferramenta(s)</div></div>' +
-            '<button class="btn btn-danger btn-sm" data-del="' + s.id + '">Excluir</button></div>';
+            '<button class="btn btn-danger btn-sm gestor-only" data-del="' + s.id + '">Excluir</button></div>';
         }).join("") + '</div>';
     }
   };
 
+  /* ================================================================ AUDITORIA (perfil auditor) */
+  function diaISO(offset) { var d = new Date(); d.setDate(d.getDate() + offset); return d.toISOString().slice(0, 10); }
+  var audF = { de: diaISO(-7), ate: diaISO(0), categoria: "", acao: "", resultado: "", recurso: "", ator_email: "", correlacao: "" };
+  var aud = { itens: [], prox: null, carregando: false, erro: "", feito: false };
+  var CAT_AUD = ["", "movimentacao", "dados", "autenticacao", "autorizacao", "exportacao", "importacao", "privacidade", "auditoria", "seguranca", "aplicacao", "operacao", "compartilhamento"];
+  function periodo() {
+    return { de: new Date(audF.de + "T00:00:00").toISOString(), ate: new Date(audF.ate + "T23:59:59.999").toISOString() };
+  }
+  async function buscarAud(reset) {
+    if (aud.carregando) return;
+    aud.carregando = true; aud.erro = "";
+    if (reset) { aud.itens = []; aud.prox = null; }
+    drawAud();
+    try {
+      var p = periodo();
+      var r = await A.API.consultarAuditoria(Object.assign({}, audF, { de: p.de, ate: p.ate, antes_de: reset ? null : aud.prox, limite: 50 }));
+      aud.itens = aud.itens.concat(r.itens || []); aud.prox = r.proximo_antes_de || null; aud.feito = true;
+    } catch (e) { aud.erro = A.errMsg(e); }
+    aud.carregando = false; drawAud();
+  }
+  function badgeRes(r) { return '<span class="badge ' + (r === "sucesso" ? "badge-good" : r === "negado" ? "badge-late" : "badge-warn") + '">' + esc(r) + '</span>'; }
+  function drawAud() {
+    var info = $("audInfo"), list = $("audList"), more = $("audMore");
+    if (!list) return;
+    info.innerHTML = aud.erro ? '<div class="form-error">' + esc(aud.erro) + '</div>' :
+      aud.carregando ? '<div class="small muted">Consultando…</div>' :
+      aud.feito ? '<div class="small muted">' + aud.itens.length + ' evento(s) carregado(s). Toda consulta fica registrada na própria auditoria.</div>' : "";
+    list.innerHTML = !aud.itens.length ? (aud.feito && !aud.carregando ? '<div class="card empty"><span class="ic">🔍</span>Nenhum evento no período/filtros.</div>' : "") :
+      '<div class="table-wrap" style="max-height:none"><table class="tbl"><thead><tr><th>#</th><th>Quando (local)</th><th>Ator</th><th>Categoria</th><th>Ação</th><th>Recurso</th><th>Resultado</th><th>Motivo</th><th></th></tr></thead><tbody>' +
+      aud.itens.map(function (e) {
+        return '<tr' + (e.criticidade === "critica" ? ' style="background:var(--danger-bg)"' : "") + '><td class="mono">' + e.id + '</td><td class="mono">' + esc(A.fmtDateTime(e.ocorrido_em)) + '</td>' +
+          '<td>' + esc(e.ator_email || e.ator_tipo) + '</td><td>' + esc(e.categoria) + '</td><td><strong>' + esc(e.acao) + '</strong></td>' +
+          '<td class="mono">' + esc((e.recurso || "") + (e.recurso_id ? " · " + String(e.recurso_id).slice(0, 8) : "")) + '</td><td>' + badgeRes(e.resultado) + '</td>' +
+          '<td>' + esc(e.motivo || "") + '</td><td><button class="btn btn-outline btn-sm" data-ev="' + e.id + '">Detalhes</button></td></tr>';
+      }).join("") + '</tbody></table></div>';
+    more.innerHTML = aud.prox && !aud.carregando ? '<button class="btn btn-ghost btn-block" id="audMoreBtn" style="margin-top:10px">Carregar mais 50</button>' : "";
+    if ($("audMoreBtn")) $("audMoreBtn").addEventListener("click", function () { buscarAud(false); });
+  }
+  var Auditoria = {
+    build: function (el) {
+      el.innerHTML =
+        '<div class="card" style="margin-bottom:14px"><form id="audForm"><div class="form-grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">' +
+          '<label class="field">De<input type="date" id="au_de" value="' + audF.de + '"></label>' +
+          '<label class="field">Até<input type="date" id="au_ate" value="' + audF.ate + '"></label>' +
+          '<label class="field">Categoria<select id="au_cat">' + CAT_AUD.map(function (c) { return '<option value="' + c + '">' + (c || "Todas") + '</option>'; }).join("") + '</select></label>' +
+          '<label class="field">Resultado<select id="au_res"><option value="">Todos</option><option>sucesso</option><option>falha</option><option>negado</option><option>parcial</option></select></label>' +
+          '<label class="field">Ação<input id="au_acao" placeholder="ex.: retirada, delete" maxlength="60"></label>' +
+          '<label class="field">Recurso<input id="au_rec" placeholder="ex.: funcionarios" maxlength="60"></label>' +
+          '<label class="field">E-mail do ator<input id="au_ator" placeholder="ex.: maria@empresa.com" maxlength="120"></label>' +
+          '<label class="field">Correlação<input id="au_corr" class="mono" maxlength="64"></label>' +
+        '</div><div class="row" style="margin-top:12px"><button class="btn btn-primary" type="submit">Buscar</button><span class="spacer"></span>' +
+          '<button class="btn btn-ghost" type="button" id="audVerif">🔒 Verificar integridade</button>' +
+          '<button class="btn btn-ghost" type="button" id="audExp">⬇ Exportar período</button></div></form></div>' +
+        '<div id="audInfo"></div><div id="audList"></div><div id="audMore"></div>';
+      $("audForm").addEventListener("submit", function (e) {
+        e.preventDefault();
+        audF = { de: $("au_de").value, ate: $("au_ate").value, categoria: $("au_cat").value, resultado: $("au_res").value, acao: $("au_acao").value.trim(),
+          recurso: $("au_rec").value.trim(), ator_email: $("au_ator").value.trim(), correlacao: $("au_corr").value.trim() };
+        buscarAud(true);
+      });
+      on($("audList"), "click", "[data-ev]", function (b) {
+        var e = aud.itens.find(function (x) { return String(x.id) === b.dataset.ev; }); if (!e) return;
+        A.openModal(A.modalHead("Evento #" + e.id) +
+          '<dl class="kv">' + ["evento_uuid", "ocorrido_em", "ator_email", "ator_id", "ator_tipo", "categoria", "acao", "criticidade", "recurso", "recurso_id", "resultado", "motivo", "correlacao_id", "origem", "versao_esquema", "hash"]
+            .map(function (k) { return '<dt>' + k + '</dt><dd class="mono" style="word-break:break-all;font-weight:500">' + esc(e[k] == null ? "—" : e[k]) + '</dd>'; }).join("") + '</dl>' +
+          '<div class="section-title">Contexto</div><pre class="mono small" style="white-space:pre-wrap;word-break:break-all;background:var(--surface-2);padding:10px;border-radius:10px">' +
+          esc(JSON.stringify(e.contexto, null, 2)) + '</pre>', { wide: true });
+      });
+      $("audVerif").addEventListener("click", async function () {
+        var b = $("audVerif"); b.disabled = true; b.textContent = "Verificando…";
+        try {
+          var r = await A.API.verificarIntegridade(function (n) { b.textContent = "Verificando… " + n; });
+          var m = A.openModal(A.modalHead("Verificação de integridade") +
+            (r.ok ? '<p style="color:var(--good);font-weight:700">✓ Cadeia íntegra — ' + r.eventos_verificados + ' eventos verificados.</p>'
+                  : r.erro ? '<p class="form-error">' + esc(r.erro) + '</p>'
+                  : '<p style="color:var(--danger);font-weight:700">✗ Problema no evento #' + esc(r.primeiro_erro_id) + ' (' + esc(r.tipo_erro) + '). Preserve as evidências e abra um registro de incidente.</p>') +
+            (r.ultimo_hash ? '<div class="section-title">Âncora de hoje (anote fora do sistema)</div>' +
+              '<p class="mono small" style="word-break:break-all;background:var(--surface-2);padding:10px;border-radius:10px">Evento #' + esc(r.ultimo_id) + '<br>' + esc(r.ultimo_hash) + '</p>' +
+              '<p class="small muted">Envie o número e o hash acima, com a data, para fora do sistema (ex.: e-mail para a área de segurança). ' +
+              'A verificação acima <strong>não</strong> detecta sozinha uma cadeia inteira reescrita ou o corte do final por quem administra o banco — ' +
+              'para isso, confira periodicamente as âncoras anotadas abaixo.</p>' : "") +
+            '<div class="section-title">Conferir uma âncora anotada</div><div class="row" style="flex-wrap:nowrap">' +
+            '<input class="search-input mono" id="anc_id" placeholder="nº do evento" style="max-width:120px;min-width:0" inputmode="numeric">' +
+            '<input class="search-input mono" id="anc_h" placeholder="hash anotado" style="min-width:0">' +
+            '<button class="btn btn-ghost" id="anc_ok">Conferir</button></div><div class="small" id="anc_res" style="margin-top:8px"></div>');
+          m.querySelector("#anc_ok").addEventListener("click", async function () {
+            var id = parseInt(m.querySelector("#anc_id").value, 10), h = m.querySelector("#anc_h").value.trim();
+            if (!id || !/^[0-9a-fA-F]{64}$/.test(h)) { m.querySelector("#anc_res").textContent = "Informe o número do evento e o hash de 64 caracteres."; return; }
+            try {
+              var c = await A.API.confirmarAncora(id, h);
+              var el = m.querySelector("#anc_res"); el.textContent = c.erro || c.mensagem; el.style.color = c.ok ? "var(--good)" : "var(--danger)"; el.style.fontWeight = "700";
+            } catch (e) { m.querySelector("#anc_res").textContent = A.errMsg(e); }
+          });
+        } catch (e) { A.toast(A.errMsg(e), 5000); }
+        b.disabled = false; b.textContent = "🔒 Verificar integridade";
+      });
+      $("audExp").addEventListener("click", function () {
+        var p;
+        try { p = periodo(); } catch (e) { return A.toast("Período inválido"); }
+        var m = A.openModal(A.modalHead("Exportar auditoria") +
+          '<p class="small">Período: <strong>' + esc(audF.de) + '</strong> a <strong>' + esc(audF.ate) + '</strong> (máx. 366 dias e 5.000 eventos).</p>' +
+          '<p class="small muted">O arquivo contém e-mails de usuários e identificadores internos. Guarde em local de acesso restrito e apague quando a finalidade for cumprida. A exportação fica registrada.</p>' +
+          '<label class="field">Finalidade (obrigatória)<textarea id="ex_fin" rows="2" maxlength="200" placeholder="Ex.: auditoria interna mensal de controles"></textarea></label>' +
+          '<div class="form-error" id="ex_err"></div><div class="modal-actions"><button class="btn btn-ghost" data-close>Cancelar</button><button class="btn btn-primary" id="ex_ok">Exportar</button></div>');
+        m.querySelector("#ex_ok").addEventListener("click", async function () {
+          var fin = m.querySelector("#ex_fin").value.trim();
+          if (fin.length < 10) { m.querySelector("#ex_err").textContent = "Descreva a finalidade (mínimo 10 caracteres)."; return; }
+          this.disabled = true;
+          try {
+            var r = await A.API.exportarAuditoria(p.de, p.ate, fin);
+            var cols = ["id", "evento_uuid", "ocorrido_em", "ator_email", "ator_id", "ator_tipo", "categoria", "acao", "criticidade", "recurso", "recurso_id", "resultado", "motivo", "correlacao_id", "origem", "versao_esquema", "hash_anterior", "hash"];
+            var linhas = [cols.concat(["contexto"])].concat((r.itens || []).map(function (e) {
+              return cols.map(function (c) { return e[c] == null ? "" : (c === "id" || c === "versao_esquema" ? Number(e[c]) : String(e[c])); }).concat([JSON.stringify(e.contexto || {})]);
+            }));
+            await salvarXlsx(linhas, "auditoria_" + audF.de + "_a_" + audF.ate + ".xlsx");
+            A.closeModal(); A.toast((r.itens || []).length + " evento(s) exportado(s)");
+          } catch (e) { m.querySelector("#ex_err").textContent = A.errMsg(e); this.disabled = false; }
+        });
+      });
+      buscarAud(true);
+    },
+    update: function () { drawAud(); }   // não consulta sozinho: cada consulta gera um evento
+  };
+
   /* ================================================================ navegação */
-  var VIEWS = { painel: Painel, escanear: Escanear, ferramentas: Ferramentas, funcionarios: Funcionarios, etiquetas: Etiquetas, historico: Historico, fornecedores: Fornecedores };
+  var VIEWS = { painel: Painel, escanear: Escanear, ferramentas: Ferramentas, funcionarios: Funcionarios, etiquetas: Etiquetas, historico: Historico, fornecedores: Fornecedores, auditoria: Auditoria };
   var built = {};
 
   function renderChrome() {
@@ -711,7 +874,12 @@
     var late = A.lateTools().length, badge = $("alertCount");
     badge.hidden = !late; badge.textContent = late;
     $("demoBanner").hidden = !A.DEMO;
-    $("userTag").textContent = A.DEMO ? "modo demonstração" : (S.user && S.user.email) || "";
+    $("userTag").textContent = (A.DEMO ? "modo demonstração" : (S.user && S.user.email) || "") + (S.papeis.length ? " · " + S.papeis.join(", ") : "");
+    // Interface por perfil (a autorização real é feita no servidor; isto só evita botões inúteis)
+    document.body.classList.toggle("pode-operar", A.tem(["almoxarife", "gestor"]));
+    document.body.classList.toggle("e-gestor", A.tem("gestor"));
+    document.body.classList.toggle("ve-assinatura", A.tem(["gestor", "auditor"]));
+    $("tabAuditoria").hidden = !A.tem("auditor");
   }
   function render() {
     renderChrome();
@@ -720,7 +888,7 @@
     v.update();
   }
   function setTab(tab) {
-    if (TABS.indexOf(tab) < 0) tab = "painel";
+    if (TABS.indexOf(tab) < 0 || (tab === "auditoria" && !A.tem("auditor"))) tab = "painel";
     if (currentTab === "escanear" && tab !== "escanear") stopScan();
     currentTab = tab;
     TABS.forEach(function (t) { $("view-" + t).hidden = t !== tab; });
@@ -732,6 +900,8 @@
   $("tabbar").addEventListener("click", function (e) { var b = e.target.closest(".tab-btn"); if (b) setTab(b.dataset.tab); });
   $("siteSelect").addEventListener("change", function (e) { currentSite = e.target.value; try { localStorage.setItem("almox_site", currentSite); } catch (x) { } render(); });
   $("logoutBtn").addEventListener("click", function () { A.askConfirm("Sair do sistema?", A.logout, "Sair"); });
+  // Abrir o WhatsApp com dados do funcionário é um compartilhamento: fica registrado
+  document.addEventListener("click", function (e) { var a = e.target.closest("a[data-wa]"); if (a) A.auditarSilencioso("compartilhamento_whatsapp", a.dataset.wa); });
 
   A.onChange(function () { render(); notifyLate(); });
   setInterval(function () { render(); notifyLate(); }, 60000);

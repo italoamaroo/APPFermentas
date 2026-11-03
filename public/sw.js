@@ -1,5 +1,5 @@
 /* Service worker simples: rede primeiro, cache como reserva (app abre mesmo com sinal fraco). */
-const CACHE = "almox-v1";
+const CACHE = "almox-v2";
 const SHELL = ["app.html", "index.html", "css/style.css", "js/core.js", "js/app.js", "js/painel.js",
   "vendor/supabase.js", "vendor/qrcode.js", "vendor/jsQR.js", "icons/icon-192.png", "manifest.webmanifest"];
 self.addEventListener("install", (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).catch(() => {})); self.skipWaiting(); });

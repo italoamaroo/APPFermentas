@@ -7,11 +7,21 @@
   "use strict";
 
   var CFG = window.APP_CONFIG || {};
-  var DEMO = !CFG.SUPABASE_URL || !CFG.SUPABASE_ANON_KEY;
+  // MODO vem do build.js. Em produção sem configuração => "erro" (falha fechada, nunca cai em demonstração)
+  var MODO = CFG.MODO || ((!CFG.SUPABASE_URL || !CFG.SUPABASE_ANON_KEY) ? "demonstracao" : "producao");
+  var DEMO = MODO === "demonstracao";
   var ALERTA_HORAS = Number(CFG.ALERTA_HORAS) || 48;
 
   /* ------------------------------------------------------------ helpers */
-  function uid() { return (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36)); }
+  // UUID v4 (também em navegadores sem crypto.randomUUID — o servidor exige o formato no nome da assinatura)
+  function uid() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    var b = new Uint8Array(16);
+    if (window.crypto && crypto.getRandomValues) crypto.getRandomValues(b); else for (var i = 0; i < 16; i++) b[i] = Math.floor(Math.random() * 256);
+    b[6] = (b[6] & 15) | 64; b[8] = (b[8] & 63) | 128;
+    var h = Array.prototype.map.call(b, function (x) { return (x + 256).toString(16).slice(1); }).join("");
+    return h.slice(0, 8) + "-" + h.slice(8, 12) + "-" + h.slice(12, 16) + "-" + h.slice(16, 20) + "-" + h.slice(20);
+  }
   function nowISO() { return new Date().toISOString(); }
   function hoursAgoISO(h) { return new Date(Date.now() - h * 3600 * 1000).toISOString(); }
   function esc(s) {
@@ -63,7 +73,10 @@
   var ACTION_ICON = { retirada: "↗", devolucao: "↩", manutencao_inicio: "🔧", manutencao_fim: "✓" };
 
   /* ------------------------------------------------------------ estado */
-  var S = { ferramentas: [], funcionarios: [], fornecedores: [], movimentacoes: [], user: null };
+  var S = { ferramentas: [], funcionarios: [], fornecedores: [], movimentacoes: [], user: null, papeis: [] };
+  function tem(papeis) { papeis = [].concat(papeis); return S.papeis.some(function (p) { return papeis.indexOf(p) >= 0; }); }
+  // Identificador de correlação desta sessão de página (vai no cabeçalho x-correlacao de toda requisição)
+  var CORRELACAO = "s-" + uid();
   var listeners = [];
   function onChange(fn) { listeners.push(fn); }
   var emitT = null;
@@ -84,7 +97,9 @@
   var Remote = {
     init: async function () {
       sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY, {
-        auth: { persistSession: true, autoRefreshToken: true }
+        auth: { persistSession: true, autoRefreshToken: true },
+        // ENVIAR_CORRELACAO=0 no Render desliga o cabeçalho caso algum proxy recuse cabeçalhos personalizados
+        global: { headers: CFG.ENVIAR_CORRELACAO === false ? {} : { "x-correlacao": CORRELACAO } }
       });
       var r = await sb.auth.getSession();
       S.user = r.data && r.data.session ? r.data.session.user : null;
@@ -96,11 +111,59 @@
       if (r.error) throw r.error;
       S.user = r.data.user;
     },
-    signOut: async function () { await sb.auth.signOut(); S.user = null; },
+    signOut: async function () { await sb.auth.signOut(); S.user = null; S.papeis = []; },
+    loadPapeis: async function () {
+      var r = await sb.from("perfis").select("papel");
+      if (r.error) throw r.error;
+      S.papeis = (r.data || []).map(function (x) { return x.papel; });
+      return S.papeis;
+    },
+    // Evento declarado pela aplicação (lista fechada no servidor). Retorna true se gravado.
+    auditar: async function (acao, recursoId, contexto, resultado) {
+      var r = await sb.rpc("auditar_evento", { p_acao: acao, p_recurso_id: recursoId || null, p_contexto: contexto || {}, p_resultado: resultado || "sucesso" });
+      if (r.error) throw r.error;
+      return r.data === true;
+    },
+    consultarAuditoria: async function (f) {
+      return this.rpcOk(await sb.rpc("consultar_auditoria", {
+        p_de: f.de, p_ate: f.ate, p_acao: f.acao || null, p_categoria: f.categoria || null, p_resultado: f.resultado || null,
+        p_recurso: f.recurso || null, p_recurso_id: f.recurso_id || null, p_ator_email: f.ator_email || null,
+        p_correlacao: f.correlacao || null, p_antes_de: f.antes_de || null, p_limite: f.limite || 50
+      }));
+    },
+    exportarAuditoria: async function (de, ate, finalidade) {
+      return this.rpcOk(await sb.rpc("exportar_auditoria", { p_de: de, p_ate: ate, p_finalidade: finalidade }));
+    },
+    // Verifica a cadeia inteira em lotes de 20 000 eventos; para no primeiro erro
+    verificarIntegridade: async function (onProgresso) {
+      var desde = null, total = 0, r;
+      do {
+        r = await sb.rpc("verificar_integridade_auditoria", { p_a_partir_de: desde, p_lote: 20000 });
+        if (r.error) throw r.error;
+        r = r.data; if (r.erro) return r;
+        total += r.eventos_verificados || 0; desde = r.proximo_a_partir_de;
+        if (onProgresso) onProgresso(total);
+      } while (r.ok && desde);
+      r.eventos_verificados = total;
+      return r;
+    },
+    confirmarAncora: async function (id, hash) {
+      var r = await sb.rpc("confirmar_ancora_auditoria", { p_id: id, p_hash: hash });
+      if (r.error) throw r.error;
+      return r.data;
+    },
+    // RPCs que retornam {ok, erro}: recusa do servidor vira exceção legível
+    rpcOk: function (r) {
+      if (r.error) throw r.error;
+      if (r.data && r.data.ok === false) throw new Error(r.data.erro || "Operação recusada pelo servidor");
+      return r.data;
+    },
+    // movimentacoes: o caminho da assinatura NÃO é legível pelo cliente (privilégio por coluna)
+    COLUNAS: { movimentacoes: "id,ferramenta_id,ferramenta_codigo,ferramenta_nome,acao,funcionario_id,funcionario_nome,matricula,site,observacao,usuario_email,usuario_id,tem_assinatura,created_at" },
     fetchAll: async function (table, order, asc, max) {
       var out = [], from = 0, step = 1000;
       while (true) {
-        var q = sb.from(table).select("*").order(order, { ascending: !!asc }).range(from, from + step - 1);
+        var q = sb.from(table).select(this.COLUNAS[table] || "*").order(order, { ascending: !!asc }).range(from, from + step - 1);
         var r = await q;
         if (r.error) throw r.error;
         out = out.concat(r.data);
@@ -173,25 +236,25 @@
       this.ok(await sb.storage.from("assinaturas").upload(path, blob, { contentType: "image/png", upsert: false }));
       return path;
     },
-    assinaturaUrl: async function (path) {
-      if (!path) return null;
-      if (/^data:/.test(path)) return path;
-      var r = await sb.storage.from("assinaturas").createSignedUrl(path, 600);
+    // Visualização sempre passa pelo registro de auditoria; link temporário de 2 minutos
+    assinaturaUrl: async function (mov) {
+      var d = this.rpcOk(await sb.rpc("registrar_visualizacao_assinatura", { p_movimentacao: mov.id }));
+      var r = await sb.storage.from("assinaturas").createSignedUrl(d.caminho, 120);
       if (r.error) throw r.error;
       return r.data.signedUrl;
     },
     retirar: async function (toolId, funcId, site, sigBlob, obs) {
       var path = await this.uploadAssinatura(sigBlob);
-      this.ok(await sb.rpc("retirar_ferramenta", { p_ferramenta: toolId, p_funcionario: funcId, p_site: site || null, p_assinatura: path, p_obs: obs || null }));
+      this.rpcOk(await sb.rpc("retirar_ferramenta_v2", { p_ferramenta: toolId, p_funcionario: funcId, p_site: site || null, p_assinatura: path, p_obs: obs || null }));
       await Promise.all([this.load("ferramentas"), this.load("movimentacoes")]);
     },
     devolver: async function (toolId, sigBlob, obs) {
       var path = await this.uploadAssinatura(sigBlob);
-      this.ok(await sb.rpc("devolver_ferramenta", { p_ferramenta: toolId, p_assinatura: path, p_obs: obs || null }));
+      this.rpcOk(await sb.rpc("devolver_ferramenta_v2", { p_ferramenta: toolId, p_assinatura: path, p_obs: obs || null }));
       await Promise.all([this.load("ferramentas"), this.load("movimentacoes")]);
     },
     manutencao: async function (toolId, iniciar, obs) {
-      this.ok(await sb.rpc("manutencao_ferramenta", { p_ferramenta: toolId, p_iniciar: !!iniciar, p_obs: obs || null }));
+      this.rpcOk(await sb.rpc("manutencao_ferramenta_v2", { p_ferramenta: toolId, p_iniciar: !!iniciar, p_obs: obs || null }));
       await Promise.all([this.load("ferramentas"), this.load("movimentacoes")]);
     }
   };
@@ -256,6 +319,25 @@
     },
     signIn: async function () { }, signOut: async function () { },
     load: async function () { emit(); },
+    loadPapeis: async function () { S.papeis = ["almoxarife", "gestor", "auditor"]; return S.papeis; },
+    // Demonstração: auditoria apenas em memória (sem garantias de integridade)
+    eventos: [],
+    auditar: async function (acao, recursoId, contexto, resultado) {
+      this.eventos.unshift({ id: this.eventos.length + 1, ocorrido_em: nowISO(), ator_email: "demonstracao@local", categoria: "aplicacao",
+        acao: acao, criticidade: "baixa", recurso: null, recurso_id: recursoId || null, resultado: resultado || "sucesso",
+        origem: "aplicacao", correlacao_id: CORRELACAO, contexto: contexto || {} });
+      return true;
+    },
+    consultarAuditoria: async function (f) {
+      var it = this.eventos.filter(function (e) {
+        return (!f.acao || e.acao === f.acao) && (!f.resultado || e.resultado === f.resultado) && (!f.antes_de || e.id < f.antes_de);
+      });
+      var lim = f.limite || 50;
+      return { ok: true, itens: it.slice(0, lim), proximo_antes_de: it.length > lim ? it[lim - 1].id : null };
+    },
+    exportarAuditoria: async function () { return { ok: true, itens: this.eventos.slice() }; },
+    verificarIntegridade: async function () { return { ok: true, eventos_verificados: this.eventos.length, ultimo_id: this.eventos.length, ultimo_hash: "demonstracao-sem-hash" }; },
+    confirmarAncora: async function () { return { ok: true, existe: true, mensagem: "Demonstração: âncoras não são verificadas." }; },
     subscribe: function () {
       window.addEventListener("storage", function (e) { if (e.key === LS_KEY) Local.init(); });
     },
@@ -290,11 +372,11 @@
     blobToDataUrl: function (blob) {
       return new Promise(function (res) { if (!blob) return res(null); var r = new FileReader(); r.onload = function () { res(r.result); }; r.readAsDataURL(blob); });
     },
-    assinaturaUrl: async function (p) { return p; },
+    assinaturaUrl: async function (mov) { return mov.assinatura_path; },
     addMov: function (t, acao, f, sig, obs) {
       S.movimentacoes.unshift({ id: uid(), ferramenta_id: t.id, ferramenta_codigo: t.codigo, ferramenta_nome: t.nome, acao: acao,
         funcionario_id: f ? f.id : null, funcionario_nome: f ? f.nome : null, matricula: f ? f.matricula : null, site: t.site,
-        assinatura_path: sig, observacao: obs || null, usuario_email: "demonstracao@local", created_at: nowISO() });
+        assinatura_path: sig, tem_assinatura: !!sig, observacao: obs || null, usuario_email: "demonstracao@local", created_at: nowISO() });
     },
     retirar: async function (toolId, funcId, site, sigBlob, obs) {
       var t = toolById(toolId), f = funcById(funcId);
@@ -346,17 +428,56 @@
       document.getElementById("lg_err").textContent = "";
       try {
         await API.signIn(document.getElementById("lg_email").value.trim(), document.getElementById("lg_pass").value);
-        root.remove(); onDone();
+        root.remove(); onDone(true);
       } catch (err) {
         document.getElementById("lg_err").textContent = /Invalid login/i.test(err.message) ? "E-mail ou senha incorretos." : errMsg(err);
       } finally { btn.disabled = false; }
     });
   }
 
+  function blockingScreen(title, html, withLogout) {
+    var root = document.createElement("div");
+    root.className = "login-wrap";
+    root.innerHTML = '<div class="card login-card"><div class="brand-mark">🧰</div><h1 style="font-size:20px">' + esc(title) + '</h1>' +
+      '<div class="small" style="line-height:1.5;margin-top:8px">' + html + '</div>' +
+      (withLogout ? '<button class="btn btn-ghost btn-block" style="margin-top:16px" id="blkOut">Sair</button>' : "") + '</div>';
+    document.body.appendChild(root);
+    if (withLogout) root.querySelector("#blkOut").addEventListener("click", function () { API.signOut().then(function () { location.reload(); }); });
+  }
+
+  // Eventos de baixa criticidade: falha não bloqueia a operação, mas fica visível no console
+  function auditarSilencioso(acao, recursoId, contexto) {
+    return API.auditar(acao, recursoId, contexto).catch(function (e) { console.warn("[auditoria] evento não gravado:", acao, e && e.message); return false; });
+  }
+  // Eventos de alta criticidade (exportação/importação): se a auditoria falhar, a operação NÃO prossegue
+  async function auditarObrigatorio(acao, recursoId, contexto) {
+    var ok = false;
+    try { ok = await API.auditar(acao, recursoId, contexto); } catch (e) { throw new Error("Não foi possível registrar a auditoria desta operação (" + errMsg(e) + "). Operação cancelada."); }
+    if (!ok) throw new Error("Operação não autorizada para o seu perfil ou limite de registros excedido.");
+    return true;
+  }
+
   async function boot(onReady) {
     var appEl = document.querySelector(".app");
     if (appEl) appEl.hidden = true;
-    var start = async function () {
+    if (MODO === "erro") {
+      blockingScreen("Sistema não configurado", "As variáveis <strong>SUPABASE_URL</strong> e <strong>SUPABASE_ANON_KEY</strong> não foram definidas no servidor. " +
+        "Por segurança o sistema não abre em modo de demonstração em produção. Avise o administrador.");
+      return;
+    }
+    var start = async function (novoLogin) {
+      try { await API.loadPapeis(); }
+      catch (e) {   // falha de rede NÃO é "usuário sem perfil" (evita alerta falso na auditoria)
+        blockingScreen("Não foi possível carregar seu perfil", "Verifique a conexão e recarregue a página. Detalhe: " + esc(errMsg(e)), true);
+        return;
+      }
+      if (!S.papeis.length) {
+        auditarSilencioso("login_sem_perfil");
+        blockingScreen("Usuário sem perfil de acesso", "Seu login funcionou, mas nenhum perfil (almoxarife, gestor ou auditor) foi atribuído a <strong>" +
+          esc(S.user && S.user.email) + "</strong>. Peça ao administrador para liberar o acesso.", true);
+        return;
+      }
+      if (novoLogin === true) auditarSilencioso("login", null, { papeis: S.papeis });
       if (appEl) appEl.hidden = false;
       try { await API.load(); } catch (e) { toast("Erro ao carregar dados: " + errMsg(e), 5000); }
       API.subscribe();
@@ -364,9 +485,9 @@
     };
     var logged = false;
     try { logged = await API.init(); } catch (e) { console.error(e); }
-    if (logged) start(); else loginScreen(start);
+    if (logged) start(false); else loginScreen(start);
   }
-  async function logout() { await API.signOut(); location.reload(); }
+  async function logout() { await auditarSilencioso("logout"); await API.signOut(); location.reload(); }
 
   /* ------------------------------------------------------------ modal */
   var modalStack = [];
@@ -648,7 +769,7 @@
       ' · ' + esc(mov.funcionario_nome || "") + (mov.matricula ? " (mat. " + esc(mov.matricula) + ")" : "") + ' · ' + fmtDateTime(mov.created_at) + '</p>' +
       '<div id="sigHolder" class="muted small" style="text-align:center;padding:20px;">Carregando…</div>');
     try {
-      var url = await API.assinaturaUrl(mov.assinatura_path);
+      var url = await API.assinaturaUrl(mov);
       el.querySelector("#sigHolder").innerHTML = '<img class="sig-img" alt="Assinatura" src="' + esc(url) + '">';
     } catch (e) { el.querySelector("#sigHolder").textContent = "Não foi possível abrir: " + errMsg(e); }
   }
@@ -669,7 +790,8 @@
     uid: uid, esc: esc, fmtDateTime: fmtDateTime, fmtElapsed: fmtElapsed, hoursSince: hoursSince, isLate: isLate, daysLabel: daysLabel,
     norm: norm, initials: initials, toast: toast, errMsg: errMsg,
     funcById: funcById, toolById: toolById, toolByCode: toolByCode, funcByMatricula: funcByMatricula, holder: holder, fmtWorker: fmtWorker, lateTools: lateTools,
-    onChange: onChange, boot: boot, logout: logout,
+    onChange: onChange, boot: boot, logout: logout, tem: tem, MODO: MODO, CORRELACAO: CORRELACAO,
+    auditarSilencioso: auditarSilencioso, auditarObrigatorio: auditarObrigatorio,
     openModal: openModal, closeModal: closeModal, modalHead: modalHead, askConfirm: askConfirm,
     qrSvg: qrSvg, Scanner: Scanner, scannerMarkup: scannerMarkup, scanModal: scanModal, beep: beep,
     SignaturePad: SignaturePad, signatureMarkup: signatureMarkup, mountSignature: mountSignature, funcionarioPicker: funcionarioPicker,

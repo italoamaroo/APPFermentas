@@ -19,8 +19,17 @@ Painel web + app de celular para controlar a retirada e a devolução de ferrame
    - Se quiser dados de exemplo, rode também `supabase/seed.sql` (é opcional).
 3. Em **Authentication → Users → Add user**, crie o usuário de cada almoxarife (e-mail e senha) e marque *Auto Confirm User*.
 4. Em **Authentication → Sign In / Providers**, **desligue "Allow new users to sign up"**. Assim só entra quem você cadastrou.
-5. Em **Project Settings → API**, copie a **Project URL** e a chave **anon public**.
+5. Em **Project Settings → API**, copie a **Project URL** (só `https://xxxx.supabase.co`, sem `/rest/v1`) e a chave **anon public**.
    ⚠️ Nunca use a chave `service_role`. O build bloqueia essa chave se ela for colocada por engano.
+6. **Auditoria e perfis (obrigatório):** no SQL Editor, rode `supabase/migrations/002_auditoria_fase_a.sql`. Na primeira execução, todos os usuários existentes viram **almoxarife**. Conceda gestor e auditor (de preferência a pessoas diferentes):
+   ```sql
+   insert into public.perfis (user_id, papel, concedido_por)
+   select id, 'gestor', 'Nome de quem autorizou' from auth.users where email = 'gestor@empresa.com.br';
+   insert into public.perfis (user_id, papel, concedido_por)
+   select id, 'auditor', 'Nome de quem autorizou' from auth.users where email = 'auditor@empresa.com.br';
+   ```
+   **Todo usuário criado depois** precisa receber um perfil do mesmo jeito (`'almoxarife'`), senão vê a tela "Usuário sem perfil".
+7. Em **Authentication → Audit Logs**, ative **"Write audit logs to the database"**.
 
 ## 2. Render (hospedagem)
 
@@ -37,7 +46,7 @@ A câmera precisa de HTTPS, e o Render já fornece.
 
 ## 3. Primeiro uso
 
-1. **Funcionários → Importar planilha.** Aceita `.xlsx`, `.xls`, `.csv` e `.ods`. O sistema reconhece colunas com nomes como *Matrícula, Nome, Função/Cargo, Setor/Obra e Telefone/Celular*, mesmo que o cabeçalho não esteja na primeira linha. Antes de importar, mostra uma prévia com os novos, os atualizados e as linhas com erro. A **matrícula** identifica cada funcionário: se ela já existir, os dados são atualizados. Há também uma opção para desativar quem não estiver na planilha. Em caso de dúvida, use o botão *Baixar modelo*.
+1. **Funcionários → Importar planilha.** Aceita `.xlsx` e `.csv` (até 5 MB). Arquivos `.xls` ou `.ods` antigos: abra no Excel/LibreOffice e salve como `.xlsx`. O sistema reconhece colunas com nomes como *Matrícula, Nome, Função/Cargo, Setor/Obra e Telefone/Celular*, mesmo que o cabeçalho não esteja na primeira linha. Antes de importar, mostra uma prévia com os novos, os atualizados e as linhas com erro. A **matrícula** identifica cada funcionário: se ela já existir, os dados são atualizados. Há também uma opção para desativar quem não estiver na planilha. Em caso de dúvida, use o botão *Baixar modelo*.
 2. **Ferramentas → + Nova** para cadastrar as ferramentas. O código (ex.: `FRT-001`) é o conteúdo do QR.
 3. **Etiquetas:** selecione os itens, defina o número de cópias e clique em Imprimir.
    - *Térmica (rolo 70×25):* sai uma etiqueta por página. No driver da impressora (Zebra, Elgin, Argox…), configure o papel para 70 × 25 mm.
@@ -53,7 +62,9 @@ cp .env.example .env   # preencha (ou deixe vazio para o modo demonstração)
 npm start              # http://localhost:3000
 ```
 
-Sem as variáveis, o sistema abre em **modo demonstração**, com dados fictícios salvos só no navegador. Serve para conhecer as telas antes de configurar o banco.
+Sem as variáveis, o sistema abre em **modo demonstração**, com dados fictícios salvos só no navegador. Serve para conhecer as telas antes de configurar o banco. No Render, sem as variáveis, o site mostra "Sistema não configurado" e **nunca** abre em demonstração.
+
+Testes: `npm run test:sql` (banco) e `node tests/navegador.test.js` (navegador, com `public/` servido na porta 8765).
 
 ## Estrutura
 
@@ -63,15 +74,20 @@ public/
   css/style.css            visual (mesmo do painel original)
   js/core.js               dados (Supabase/demonstração), leitor de QR, assinatura, modais
   js/painel.js, js/app.js  telas do painel e do celular
-  vendor/                  bibliotecas (supabase-js, jsQR, qrcode, SheetJS) — sem depender de CDN
+  vendor/                  bibliotecas (supabase-js, jsQR, qrcode, read-excel-file, write-excel-file) — sem depender de CDN
   manifest.webmanifest, sw.js, icons/   app instalável
 supabase/schema.sql        banco + segurança + storage + realtime
+supabase/migrations/       002: auditoria, perfis e integridade (+ script de reversão)
+supabase/tests/, tests/    testes automatizados
+docs/AUDITORIA_LGPD.md     documentação de auditoria/LGPD, riscos e pendências; evidências em docs/evidencias/
 build.js                   gera public/js/config.js a partir das variáveis do Render
 render.yaml                blueprint do Render
 ```
 
-## Segurança e auditoria
-- Só usuários logados acessam (RLS). O histórico **não pode ser editado nem apagado** pelo app.
-- Retirada e devolução são feitas por funções no banco (`retirar_ferramenta`, `devolver_ferramenta`). Isso impede que dois celulares retirem a mesma ferramenta ao mesmo tempo.
-- Cada movimentação registra o e-mail do almoxarife que a fez e o caminho da assinatura (PNG no bucket privado `assinaturas`, acessado só por link temporário).
+## Segurança e auditoria (detalhes em `docs/AUDITORIA_LGPD.md`)
+- **Perfis:** almoxarife (opera), gestor (opera, exclui, vê assinaturas) e auditor (consulta e aba Auditoria). Quem decide é o banco, não a tela.
+- O histórico **não pode ser forjado, editado nem apagado**. Retirada e devolução passam por funções do banco (`*_v2`), que fixam autor e data e impedem retirada dupla.
+- A assinatura é obrigatória. Tem que ter sido enviada pelo próprio usuário há no máximo 15 minutos e vale para uma única movimentação. O caminho do arquivo não é exposto ao app.
+- **Trilha de auditoria** (`audit.eventos`): só aceita inclusão, com hash encadeado. Registra alterações (sem valores pessoais), negações, exportações, importações, visualização de assinaturas e consultas à própria auditoria.
+- O auditor deve rodar **Verificar integridade** periodicamente e anotar a âncora (nº do evento e hash) **fora** do sistema.
 - A view `v_alertas_posse` lista as ferramentas com mais de 2 dias com o mesmo funcionário. Pode ser usada em relatórios ou num aviso automático por e-mail (pg_cron).

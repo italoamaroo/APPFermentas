@@ -1,0 +1,28 @@
+# Testes de navegador — 2026-11-03T13:54:41.448Z
+PASSOU  N01  Produção sem configuração mostra 'Sistema não configurado' e não abre demonstração
+PASSOU  N02  Usuário sem perfil vê bloqueio e o evento 'login_sem_perfil' é enviado
+PASSOU  N03  Cliente envia cabeçalho de correlação x-correlacao  — s-1adb9edf-b7db-4fca-aba2-a551cf68f8d0
+PASSOU  N04  Auditor (somente consulta): botões Retirar/Editar/Excluir ocultos  — QR,QR
+PASSOU  N05  Aba Auditoria visível só para o auditor
+PASSOU  N05b  Auditor não vê o botão de imprimir etiquetas
+PASSOU  N06  Aba Auditoria consulta uma vez e não reconsulta sozinha ao re-renderizar  — 1/1
+PASSOU  N07  Conteúdo do evento é exibido escapado (sem injeção de HTML)
+PASSOU  N08  Verificação de integridade mostra resultado e último hash
+PASSOU  N08b  Conferência de âncora externa exibe divergência
+PASSOU  N09  Exportação de auditoria exige finalidade antes de chamar o servidor
+PASSOU  N10  Almoxarife não vê aba Auditoria nem botão Excluir
+PASSOU  N11  Recusa do servidor ({ok:false}) aparece para o usuário e não é tratada como sucesso
+PASSOU  N12  Exportação do histórico é cancelada se a auditoria não for gravada (falha fechada)  — Operação não autorizada para o seu perfil ou limite de registros excedido.
+PASSOU  N13  Demonstração: painel abre com alertas de +2 dias
+PASSOU  N14  Retirada com assinatura continua funcionando
+PASSOU  N15  Importação .xlsx com a nova biblioteca: cabeçalho fora da 1ª linha, duplicada e sem matrícula detectadas
+PASSOU  N16  Importação grava funcionários
+PASSOU  N17  Importação .csv (separador ;, aspas e acentos)
+PASSOU  N18  Modelo .xlsx é gerado (arquivo zip válido)
+PASSOU  N19  Exportação do histórico gera .xlsx
+PASSOU  N20  Exportação ficou registrada na auditoria (demonstração)
+PASSOU  N21  Aba Auditoria lista eventos
+PASSOU  N22  Sem erros de JavaScript nas páginas
+PASSOU  N23  App do celular: escanear/código → funcionário → assinatura → confirmar
+
+RESULTADO: TODOS OS TESTES PASSARAM
