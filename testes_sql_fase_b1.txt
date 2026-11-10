@@ -1,0 +1,71 @@
+# Testes SQL — Fase B.1 (incidentes) — 2026-11-03T15:24:46.314Z
+PASSOU  I01  Migração 003 aplica sobre a Fase A
+PASSOU  I02  Migração 003 é reexecutável
+PASSOU  I03  Perfil 'encarregado' aceito e concessão auditada
+PASSOU  I04  Páscoa/Paixão de Cristo calculadas (Portaria MGI 11.460/2025: 03/04/2026); Carnaval não é feriado nacional  — {"p":"2026-04-05","sexta_santa":true,"consc":true,"carnaval":false,"p27":"2027-03-28"}
+PASSOU  I05  3 dias úteis: sexta 13/11 → qua 18/11 (dia da ciência não conta)  — 2026-11-18
+PASSOU  I06  Feriado de 20/11 (Consciência Negra) pulado: qua 18/11 → ter 24/11  — 2026-11-24
+PASSOU  I07  Fuso de Recife: ciência às 23h30 locais (dia seguinte em UTC) conta pela data local  — 2026-11-24
+PASSOU  I08  Natal e fim de semana pulados: qua 23/12 → qui 24 (1), seg 28 (2), ter 29/12 (3)  — 2026-12-29
+PASSOU  I09  Almoxarife comunica suspeita de incidente
+PASSOU  I10  Âncora da trilha preservada no registro (evidência)
+PASSOU  I11  Outro almoxarife não vê a suspeita alheia
+PASSOU  I12  Quem só comunicou NÃO lê o registro (conteúdo da investigação é restrito)
+PASSOU  I13  Almoxarife não altera incidentes; tentativa auditada
+PASSOU  I14  Sem escrita direta nas tabelas (só funções oficiais)  — permission denied for table inciden | permission denied for table inciden | permission denied for table inciden
+PASSOU  I15  Nem o administrador apaga/trunca registros (guarda de 5 anos)  — Registros de incidente não podem ser apagados (guarda mínima de 5 anos — Res. CD/ANPD 15/2024, art. 10)
+PASSOU  I16  Campo fora da lista é recusado
+PASSOU  I17  Encerrar só pela função própria
+PASSOU  I18  Data de ciência no futuro é recusada
+PASSOU  I19  Gestor preenche dados do art. 10 (listas, números, datas)  — {"ok":true}
+PASSOU  I20  Critério do art. 5º fora da lista é recusado
+PASSOU  I21  Mudar avaliação de risco exige justificativa
+PASSOU  I22  Encarregado conclui avaliação com justificativa
+PASSOU  I23  Histórico guarda de/para e autor de cada alteração
+PASSOU  I24  Auditoria do incidente registra só nomes de campos (sem a descrição com dados pessoais)
+PASSOU  I25  Auditor lê o registro com prazos calculados  — prazo Thu Nov 05 2026 21:00:00 GMT-0300 (Brasilia Standard Time) / restam 3
+PASSOU  I26  Auditor não altera (somente leitura)
+PASSOU  I27  Só o encarregado enquadra como pequeno porte (gestor negado, evento crítico)
+PASSOU  I28  Pequeno porte dobra o prazo (3 → 6 dias úteis) de incidente com ciência registrada após o enquadramento
+PASSOU  I29  Risco relevante não encerra sem comunicação à ANPD e aos titulares
+PASSOU  I30  Comunicação com data futura é recusada
+PASSOU  I31  Comunicação à ANPD registrada e auditada com indicação de prazo
+PASSOU  I32  Prazo de complementação (20 dias úteis da comunicação) calculado; ainda conta prazo dos titulares
+PASSOU  I33  Com ANPD e titulares comunicados, não há mais contagem regressiva
+PASSOU  I34  Encerramento exige motivo
+PASSOU  I35  Encerramento com requisitos cumpridos
+PASSOU  I36  Incidente encerrado não é alterado (só reabrindo)
+PASSOU  I37  Reabertura com motivo fica no histórico
+PASSOU  I38  Sem risco relevante exige justificativa registrada (art. 10, VIII)
+PASSOU  Y01  Mesmo sem risco relevante, o encerramento exige o conteúdo mínimo do art. 10 (II, III, IV)
+PASSOU  I39  Sem risco relevante, com justificativa, encerra sem comunicação obrigatória
+PASSOU  I40  Falha de integridade abre incidente automaticamente
+PASSOU  I41  Não duplica incidente automático enquanto o anterior estiver aberto
+PASSOU  I42  Âncora que não confere abre incidente automaticamente
+PASSOU  X01  Funções de calendário não executam sem login (anon)  — permission denied for function prazo_dias_uteis
+PASSOU  X02  Limites contra abuso de CPU (p_dias ≤ 60; distância > 400 dias limitada)
+PASSOU  X03  Prazo vencido em fim de semana/feriado NUNCA aparece como 0 ('vence hoje')  — {"d0":0,"sab":-1,"dom":-1,"fer":-1,"ter":-1}
+PASSOU  X04  Mudar o enquadramento não altera prazo de incidente com ciência já registrada
+PASSOU  X05  Comunicação anterior à detecção é recusada
+PASSOU  X06  Ciência anterior à detecção é recusada
+PASSOU  X07  Ciência > 2 dias após a detecção exige justificativa (adia o prazo legal)
+PASSOU  X08  Com justificativa, aceita e a auditoria sinaliza 'ciencia_tardia'
+PASSOU  X09  Risco relevante não encerra sem o conteúdo mínimo do art. 10 (III, IV, VI)
+PASSOU  X10  Limite de 5 comunicações/hora por almoxarife (registro permanente não é inundado)
+PASSOU  X11  Título só com caracteres invisíveis devolve erro amigável (não erro 500)
+PASSOU  X12  Listas acima do limite (31 sistemas) são recusadas
+PASSOU  X13  Título na atualização é sanitizado (sem quebra de linha nem U+202E)  — "Novo título"
+PASSOU  X14  Nova falha de integridade com incidente aberto entra no histórico (nova_ocorrencia)
+PASSOU  X15  Incidente automático da trilha: só o encarregado altera e encerra (gestor recusado nos dois)
+PASSOU  X16  20/11 é feriado nacional só a partir de 2024 (Lei 14.759/2023)
+PASSOU  Y02  Ciência já registrada não pode ser apagada (impede recalcular o regime)
+PASSOU  Y03  Corrigir a ciência não recalcula o regime gravado na primeira ciência
+PASSOU  Y04  Critérios do art. 5º limitados a 6 itens (sem repetição em massa)
+PASSOU  Y05  Detecção com mais de 1 ano é recusada no registro comum
+PASSOU  Y06  Detecção retroativa fica sinalizada na auditoria (dias)
+PASSOU  I43  Fluxos da Fase A continuam (almoxarife lê ferramentas)
+PASSOU  I44  Reversão preserva os registros de incidente e remove as funções
+PASSOU  I45  Migração 003 reaplicável após reversão
+PASSOU  X17  Reverter 003 e depois a Fase A funciona e preserva os registros de incidente
+
+RESULTADO: TODOS OS TESTES PASSARAM

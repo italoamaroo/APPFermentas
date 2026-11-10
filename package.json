@@ -6,7 +6,8 @@
   "scripts": {
     "build": "node build.js",
     "start": "node build.js && npx --yes serve@14.2.4 public -l 3000",
-    "test:sql": "node supabase/tests/fase_a.test.mjs"
+    "test:sql": "node supabase/tests/fase_a.test.mjs",
+    "test:incidentes": "node supabase/tests/fase_b1.test.mjs"
   },
   "engines": {
     "node": ">=18"

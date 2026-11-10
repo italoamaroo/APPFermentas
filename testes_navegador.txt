@@ -1,0 +1,56 @@
+# Testes de navegador — 2026-11-10T11:54:04.072Z
+PASSOU  N01  Produção sem configuração mostra 'Sistema não configurado' e não abre demonstração
+PASSOU  N02  Usuário sem perfil vê bloqueio e o evento 'login_sem_perfil' é enviado
+PASSOU  N03  Cliente envia cabeçalho de correlação x-correlacao  — s-c2475652-c497-4fce-97a9-78a08fe5f2ef
+PASSOU  N04  Auditor (somente consulta): botões Retirar/Editar/Excluir ocultos  — QR,QR
+PASSOU  N05  Aba Auditoria visível só para o auditor
+PASSOU  N05b  Auditor não vê o botão de imprimir etiquetas
+PASSOU  N06  Aba Auditoria consulta uma vez e não reconsulta sozinha ao re-renderizar  — 1/1
+PASSOU  N07  Conteúdo do evento é exibido escapado (sem injeção de HTML)
+PASSOU  N08  Verificação de integridade mostra resultado e último hash
+PASSOU  N08b  Conferência de âncora externa exibe divergência
+PASSOU  N09  Exportação de auditoria exige finalidade antes de chamar o servidor
+PASSOU  N10  Almoxarife não vê aba Auditoria nem botão Excluir
+PASSOU  N11  Recusa do servidor ({ok:false}) aparece para o usuário e não é tratada como sucesso
+PASSOU  N12  Exportação do histórico é cancelada se a auditoria não for gravada (falha fechada)  — Operação não autorizada para o seu perfil ou limite de registros excedido.
+PASSOU  N13  Demonstração: painel abre com alertas de +2 dias
+PASSOU  N14  Retirada com assinatura continua funcionando
+PASSOU  N15  Importação .xlsx com a nova biblioteca: cabeçalho fora da 1ª linha, duplicada e sem matrícula detectadas
+PASSOU  N16  Importação grava funcionários
+PASSOU  N17  Importação .csv (separador ;, aspas e acentos)
+PASSOU  N18  Modelo .xlsx é gerado (arquivo zip válido)
+PASSOU  N19  Exportação do histórico gera .xlsx
+PASSOU  N20  Exportação ficou registrada na auditoria (demonstração)
+PASSOU  N21  Aba Auditoria lista eventos
+PASSOU  N22  Sem erros de JavaScript nas páginas
+PASSOU  B01  Prazo em dias úteis no navegador = banco (18/11, 24/11, 24/11, 29/12)  — ["2026-11-18","2026-11-24","2026-11-24","2026-12-29"]
+PASSOU  B01b  Navegador = banco: vencido em fim de semana/feriado nunca vira 0 (0, -1, -1, -1, -1)  — [0,-1,-1,-1,-1]
+PASSOU  B02  Botão ⚠ registra incidente e ele aparece na aba Incidentes
+PASSOU  B03  Indício do art. 5º aparece ao marcar 'afeta significativamente' + critério
+PASSOU  B04  Mudar avaliação sem justificativa é recusado
+PASSOU  B05  Após salvar, prazo calculado aparece (ciência 02/11 → ANPD até 05/11)  — até 05/11/2026Âncora
+PASSOU  B06  Não encerra risco relevante sem comunicações
+PASSOU  B07  Comunicações à ANPD e aos titulares registradas
+PASSOU  B08  Encerramento com requisitos cumpridos
+PASSOU  B09  Registro imprimível com os itens do art. 10 (I a VIII)
+PASSOU  B10  Sem erros de JavaScript no fluxo de incidentes
+PASSOU  B11  Almoxarife não vê a aba Incidentes
+PASSOU  B12  Almoxarife comunica incidente (chama registrar_incidente)
+PASSOU  B13  Gestor vê alerta de prazo de incidente no Painel
+PASSOU  B14  Contador vermelho na aba Incidentes quando prazo ≤ 1 dia útil
+PASSOU  B15  Botão 'Enquadramento' só para o encarregado (gestor não vê)
+PASSOU  B16  Encarregado abre direto na aba Incidentes e vê 'Enquadramento'
+PASSOU  B17  Sem a migração 003 o painel funciona e avisa que o registro não foi ativado
+PASSOU  C01  Busca sem resultado oferece 'Cadastrar … como novo funcionário'
+PASSOU  C02  Formulário abre com o nome digitado já preenchido
+PASSOU  C03  Sem matrícula não cadastra
+PASSOU  C04  Cadastra, seleciona automaticamente e libera a assinatura
+PASSOU  C05  Retirada concluída com o funcionário recém-cadastrado  — retirada|9001|Carlos Novato
+PASSOU  C06  Termo com número vira matrícula no formulário
+PASSOU  C07  Matrícula já existente não duplica: seleciona o cadastro existente
+PASSOU  C08  Sem erros de JavaScript no cadastro rápido (celular)
+PASSOU  C09  Cadastro rápido também funciona na retirada pelo painel
+PASSOU  C10  Perfil sem permissão de cadastro (auditor) não vê o botão
+PASSOU  N23  App do celular: escanear/código → funcionário → assinatura → confirmar
+
+RESULTADO: TODOS OS TESTES PASSARAM

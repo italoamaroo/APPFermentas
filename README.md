@@ -30,6 +30,11 @@ Painel web + app de celular para controlar a retirada e a devolução de ferrame
    ```
    **Todo usuário criado depois** precisa receber um perfil do mesmo jeito (`'almoxarife'`), senão vê a tela "Usuário sem perfil".
 7. Em **Authentication → Audit Logs**, ative **"Write audit logs to the database"**.
+8. **Registro de incidentes (Res. CD/ANPD 15/2024):** rode `supabase/migrations/003_incidentes.sql` e conceda o perfil **encarregado** ao DPO:
+   ```sql
+   insert into public.perfis (user_id, papel, concedido_por)
+   select id, 'encarregado', 'Nome de quem autorizou' from auth.users where email = 'dpo@empresa.com.br';
+   ```
 
 ## 2. Render (hospedagem)
 
@@ -90,4 +95,5 @@ render.yaml                blueprint do Render
 - A assinatura é obrigatória. Tem que ter sido enviada pelo próprio usuário há no máximo 15 minutos e vale para uma única movimentação. O caminho do arquivo não é exposto ao app.
 - **Trilha de auditoria** (`audit.eventos`): só aceita inclusão, com hash encadeado. Registra alterações (sem valores pessoais), negações, exportações, importações, visualização de assinaturas e consultas à própria auditoria.
 - O auditor deve rodar **Verificar integridade** periodicamente e anotar a âncora (nº do evento e hash) **fora** do sistema.
+- **Incidentes:** qualquer usuário comunica uma suspeita pelo botão ⚠. O gestor ou o encarregado completa o registro (art. 10), acompanha o prazo de 3 dias úteis para comunicar a ANPD e os titulares, registra as comunicações e encerra. Os registros não podem ser apagados (guarda mínima de 5 anos).
 - A view `v_alertas_posse` lista as ferramentas com mais de 2 dias com o mesmo funcionário. Pode ser usada em relatórios ou num aviso automático por e-mail (pg_cron).
